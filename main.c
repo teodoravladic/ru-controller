@@ -30,6 +30,7 @@ static void lnc2_print_clb(NC_VERB_LEVEL level, const char *msg)
   switch (level) {
     case NC_VERB_ERROR:
       fprintf(stderr, "nc ERROR: %s\n", msg);
+      assert(false && "Cannot continue, netconf2 version does not match\n");
       break;
     case NC_VERB_WARNING:
       fprintf(stderr, "nc WARNING: %s\n", msg);
@@ -47,6 +48,7 @@ static void lnc2_print_clb(NC_VERB_LEVEL level, const char *msg)
 static void ly_print_clb(LY_LOG_LEVEL level, const char *msg, const char *path)
 {
   printf("yang verb level = %d\n", level);
+  printf("ru address = %s\n", ru_ip_add);
 
   switch (level) {
     case LY_LLERR:
@@ -55,6 +57,7 @@ static void ly_print_clb(LY_LOG_LEVEL level, const char *msg, const char *path)
       } else {
           fprintf(stderr, "ly ERROR: %s\n", msg);
       }
+      assert(false && "Cannot continue, yang version does not match\n");
       break;
     case LY_LLWRN:
       if (path) {
@@ -98,6 +101,8 @@ int my_auth_hostkey_check(const char *hostname, ssh_session session, void *priv)
   (void)hostname;
   (void)session;
   (void)priv;
+
+  ru_ip_add = strdup(hostname);
 
   return 0;
 }
@@ -156,6 +161,134 @@ static void cli_send_recv(struct nc_rpc *rpc, FILE *output, NC_WD_MODE wd_mode, 
     assert(false && "[MPLANE] Timeout for sending the RPC expired.\n");   // pass rpc->type
   }
 
+#ifdef V1
+  // needed for V1
+  struct nc_reply *reply;
+  struct nc_reply_data *data_rpl;
+  struct nc_reply_error *error;
+  char *str = NULL;
+
+recv_reply:
+  msgtype = nc_recv_reply(session, rpc, msgid, timeout_s * 1000,
+                            LYD_OPT_DESTRUCT | LYD_OPT_NOSIBLINGS, &reply);
+  if (msgtype == NC_MSG_ERROR) {
+    assert(false && "Failed to receive a reply.");
+    cmd_disconnect();
+  } else if (msgtype == NC_MSG_WOULDBLOCK) {
+    assert(false && "Timeout for receiving a reply expired.");
+  } else if (msgtype == NC_MSG_NOTIF) {
+    /* read again */
+    goto recv_reply;
+  } else if (msgtype == NC_MSG_REPLY_ERR_MSGID) {
+    /* unexpected message, try reading again to get the correct reply */
+    printf("Unexpected reply received - ignoring and waiting for the correct reply.\n");
+    nc_reply_free(reply);
+    goto recv_reply;
+  }
+
+  switch (reply->type) {
+    case NC_RPL_OK:
+      fprintf(output, "OK\n");
+      break;
+    case NC_RPL_DATA:
+      data_rpl = (struct nc_reply_data *)reply;
+
+      switch (nc_rpc_get_type(rpc)) {
+        case NC_RPC_GETCONFIG:
+          fprintf(output, "<config xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n");
+          break;
+        case NC_RPC_GET:
+          fprintf(output, "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n");
+          break;
+        default:
+          break;
+      }
+
+      ly_wd = 0;
+    //   switch (wd_mode) {
+    //     case NC_WD_ALL:
+    //       ly_wd = LYP_WD_ALL;
+    //       break;
+    //     case NC_WD_ALL_TAG:
+    //       ly_wd = LYP_WD_ALL_TAG;
+    //       break;
+    //     case NC_WD_TRIM:
+    //       ly_wd = LYP_WD_TRIM;
+    //       break;
+    //     case NC_WD_EXPLICIT:
+    //       ly_wd = LYP_WD_EXPLICIT;
+    //       break;
+    //     default:
+    //       ly_wd = 0;
+    //       break;
+    //     }
+
+      lyd_print_file(output, data_rpl->data, output_format, LYP_WITHSIBLINGS | LYP_NETCONF | ly_wd | output_flag);
+      if (output == stdout) {
+        fprintf(output, "\n");
+      } else {
+        switch (nc_rpc_get_type(rpc)) {
+          case NC_RPC_GETCONFIG:
+            fprintf(output, "</config>\n");
+            break;
+          case NC_RPC_GET:
+            fprintf(output, "</data>\n");
+            break;
+          default:
+            break;
+          }
+      }
+      break;
+    case NC_RPL_ERROR:
+      fprintf(output, "ERROR\n");
+      error = (struct nc_reply_error *)reply;
+      for (int i = 0; i < error->count; ++i) {
+        if (error->err[i].type) {
+          fprintf(output, "\ttype:     %s\n", error->err[i].type);
+        }
+        if (error->err[i].tag) {
+          fprintf(output, "\ttag:      %s\n", error->err[i].tag);
+        }
+        if (error->err[i].severity) {
+          fprintf(output, "\tseverity: %s\n", error->err[i].severity);
+        }
+        if (error->err[i].apptag) {
+          fprintf(output, "\tapp-tag:  %s\n", error->err[i].apptag);
+        }
+        if (error->err[i].path) {
+          fprintf(output, "\tpath:     %s\n", error->err[i].path);
+        }
+        if (error->err[i].message) {
+          fprintf(output, "\tmessage:  %s\n", error->err[i].message);
+        }
+        if (error->err[i].sid) {
+          fprintf(output, "\tSID:      %s\n", error->err[i].sid);
+        }
+        for (int j = 0; j < error->err[i].attr_count; ++j) {
+          fprintf(output, "\tbad-attr #%d: %s\n", j + 1, error->err[i].attr[j]);
+        }
+        for (int j = 0; j < error->err[i].elem_count; ++j) {
+          fprintf(output, "\tbad-elem #%d: %s\n", j + 1, error->err[i].elem[j]);
+        }
+        for (int j = 0; j < error->err[i].ns_count; ++j) {
+          fprintf(output, "\tbad-ns #%d:   %s\n", j + 1, error->err[i].ns[j]);
+        }
+        for (int j = 0; j < error->err[i].other_count; ++j) {
+          lyxml_print_mem(&str, error->err[i].other[j], 0);
+          fprintf(output, "\tother #%d:\n%s\n", j + 1, str);
+          free(str);
+        }
+        fprintf(output, "\n");
+      }
+      assert(false && "Cannot continue editing RU config\n");
+      break;
+    default:
+      assert(false && "Internal error.");
+      nc_reply_free(reply);
+    }
+    nc_reply_free(reply);
+
+#elif defined V2
 recv_reply:
   msgtype = nc_recv_reply(session, rpc, msgid, timeout_s * 1000, &envp, &op);
   if (msgtype == NC_MSG_ERROR) {
@@ -177,7 +310,7 @@ recv_reply:
   /* get functionality */
   if (op) {
     /* data reply */
-            
+
     ly_wd = 0;  // but try with EXPLICIT
     // switch (wd_mode) {
     // case NC_WD_ALL:
@@ -243,10 +376,14 @@ recv_reply:
         }
         fprintf(output, "\n");
       }
+      assert(false && "Cannot continue editing RU config\n");
     }
 
     lyd_free_tree(envp);
     lyd_free_tree(op);
+#else
+  assert(false && "Unknown M-plane version\n");
+#endif
 }
 
 static void cmd_commit(void)
