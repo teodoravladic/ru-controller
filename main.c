@@ -1,3 +1,5 @@
+#include "nc_server_api.h"
+
 #include <signal.h>
 #include <assert.h>
 #include <errno.h>
@@ -8,16 +10,16 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
-#include <libyang/libyang.h>
-#include <nc_client.h>
+// #include <libyang/libyang.h>
+// #include <nc_client.h>
 
 #define CLI_CH_TIMEOUT 30         // time to wait for call-home
 #define CLI_RPC_REPLY_TIMEOUT 5   // time to wait for server reply
 
 #define HOME_DIR (getenv("HOME"))
 
-static struct nc_session *session;   // make this an array or RB tree
-static char *ru_ip_add = NULL;
+// static struct nc_session *session;   // make this an array or RB tree
+// static char *ru_ip_add = NULL;
 
 
 /* use LOG_I[M-plane] or similar, instead of printf() */
@@ -48,7 +50,7 @@ static void lnc2_print_clb(NC_VERB_LEVEL level, const char *msg)
 static void ly_print_clb(LY_LOG_LEVEL level, const char *msg, const char *path)
 {
   printf("yang verb level = %d\n", level);
-  printf("ru address = %s\n", ru_ip_add);
+  // printf("ru address = %s\n", ru_ip_add);
 
   switch (level) {
     case LY_LLERR:
@@ -86,104 +88,120 @@ static void ly_print_clb(LY_LOG_LEVEL level, const char *msg, const char *path)
   }
 }
 
-static void cmd_disconnect(void)
+static void cmd_disconnect(ru_session_t *ru_session)
 {
-  assert(session != NULL);  // probably can be taken out
+  assert(ru_session->session != NULL);  // probably can be taken out
 
-  nc_session_free(session, NULL);
-  session = NULL;
+  nc_session_free(ru_session->session, NULL);
+  ru_session->session = NULL;
 
-  printf("Successfully disconnected from RU with IP address %s\n", ru_ip_add);
+  printf("Successfully disconnected from RU with IP address %s\n", ru_session->ru_ip_add);
 }
 
-int my_auth_hostkey_check(const char *hostname, ssh_session session, void *priv)
+static int my_auth_hostkey_check(const char *hostname, ssh_session session, void *priv)
 {
   (void)hostname;
   (void)session;
   (void)priv;
 
-  ru_ip_add = strdup(hostname);
+  // ru_ip_add = strdup(hostname);
 
   return 0;
 }
 
-/* be aware that this function might need to be expanded to unix and TLS use cases */
-static void cmd_listen(void)
+static void cmd_connect(ru_session_t *ru_session)
 {
-  NC_TRANSPORT_IMPL ti = NC_TI_LIBSSH;
-
-  int port = NC_PORT_CH_SSH;
-  char *host = "0.0.0.0";       // better IPv4
-  int timeout = CLI_CH_TIMEOUT;
+  int port = NC_PORT_SSH;
   char *user = "root";
 
-  /* create the session */
-  nc_client_ssh_ch_set_username(user);
-  nc_client_ssh_ch_add_bind_listen(host, port);
+  nc_client_ssh_set_username(user);
 
-  nc_client_ssh_ch_set_auth_pref(NC_SSH_AUTH_PASSWORD, -1);
-  nc_client_ssh_ch_set_auth_pref(NC_SSH_AUTH_PUBLICKEY, 1);  // ssh-key identification
-  nc_client_ssh_ch_set_auth_pref(NC_SSH_AUTH_INTERACTIVE, -1);
+  nc_client_ssh_set_auth_pref(NC_SSH_AUTH_PASSWORD, -1);
+  nc_client_ssh_set_auth_pref(NC_SSH_AUTH_PUBLICKEY, 1);  // ssh-key identification
+  nc_client_ssh_set_auth_pref(NC_SSH_AUTH_INTERACTIVE, -1);
 
   char pub_key[32], priv_key[32];
   sprintf(pub_key, "%s%s", HOME_DIR, "/.ssh/id_rsa.pub");
   sprintf(priv_key, "%s%s", HOME_DIR, "/.ssh/id_rsa");
   printf("pub_key = %s, prv_key = %s\n", pub_key, priv_key);
-  int keypair_ret = nc_client_ssh_ch_add_keypair(pub_key, priv_key);
+  int keypair_ret = nc_client_ssh_add_keypair(pub_key, priv_key);
   assert(keypair_ret == 0 && "Unable to authenticate RU\n");
-  nc_client_ssh_ch_set_auth_hostkey_check_clb(my_auth_hostkey_check, "DATA");  // host-key identification
+  nc_client_ssh_set_auth_hostkey_check_clb(my_auth_hostkey_check, "DATA");  // host-key identification
 
-  printf("Waiting %ds for an SSH Call Home connection on port %u...\n", timeout, port);
 
-  int ret = nc_accept_callhome(timeout * 1000, NULL, &session); // check the right session; maybe session[0] is already ongoing, and need to create session[1]
-  nc_client_ssh_ch_del_bind(host, port);
+  /* create the session */
+  ru_session->session = nc_connect_ssh(ru_session->ru_ip_add, port, NULL);
+  assert(ru_session->session != NULL && "Connecting to the RU as user root failed.\n");   // ru_ip_add, port, user);   // use AssertFatal()
 
-  assert(ret == 1 && "SSH Call Home failed.");
-
-  printf("Successfuly connected to RU with IP address %s\n", ru_ip_add);
+  printf("Successfuly connected to RU with IP address %s\n", ru_session->ru_ip_add);
 }
 
+/* be aware that this function might need to be expanded to unix and TLS use cases */
+// static void cmd_listen(void)
+// {
+//   int port = NC_PORT_CH_SSH;
+//   char *host = "0.0.0.0";       // better IPv4
+//   int timeout = CLI_CH_TIMEOUT;
+//   char *user = "root";
 
-static void cli_send_recv(struct nc_rpc *rpc, FILE *output, NC_WD_MODE wd_mode, int timeout_s)
-{
-  uint32_t ly_wd;
-  uint64_t msgid;
-  struct lyd_node *envp, *op, *err, *node, *info;
-  NC_MSG_TYPE msgtype;
-  uint32_t output_flag = 0;    // other option is LYD_PRINT_SHRINK: Flag for output without indentation and formatting new lines.
-  LYD_FORMAT output_format = LYD_XML;
+//   /* create the session */
+//   nc_client_ssh_ch_set_username(user);
+//   nc_client_ssh_ch_add_bind_listen(host, port);
 
-  msgtype = nc_send_rpc(session, rpc, 1000, &msgid);
-  if (msgtype == NC_MSG_ERROR) {
-    assert(false && "[MPLANE] Failed to send the RPC.\n");   // pass rpc->type and use AssertFatal() in OAI
-    cmd_disconnect(); // should we pass session ID?
-  } else if (msgtype == NC_MSG_WOULDBLOCK) {
-    assert(false && "[MPLANE] Timeout for sending the RPC expired.\n");   // pass rpc->type
-  }
+//   nc_client_ssh_ch_set_auth_pref(NC_SSH_AUTH_PASSWORD, -1);
+//   nc_client_ssh_ch_set_auth_pref(NC_SSH_AUTH_PUBLICKEY, 1);  // ssh-key identification
+//   nc_client_ssh_ch_set_auth_pref(NC_SSH_AUTH_INTERACTIVE, -1);
+
+//   char pub_key[32], priv_key[32];
+//   sprintf(pub_key, "%s%s", HOME_DIR, "/.ssh/id_rsa.pub");
+//   sprintf(priv_key, "%s%s", HOME_DIR, "/.ssh/id_rsa");
+//   printf("pub_key = %s, prv_key = %s\n", pub_key, priv_key);
+//   int keypair_ret = nc_client_ssh_ch_add_keypair(pub_key, priv_key);
+//   assert(keypair_ret == 0 && "Unable to authenticate RU\n");
+//   nc_client_ssh_ch_set_auth_hostkey_check_clb(my_auth_hostkey_check, "DATA");  // host-key identification
+
+//   printf("Waiting %ds for an SSH Call Home connection on port %u...\n", timeout, port);
+
+//   int ret = nc_accept_callhome(timeout * 1000, NULL, &session); // check the right session; maybe session[0] is already ongoing, and need to create session[1]
+//   nc_client_ssh_ch_del_bind(host, port);
+
+//   assert(ret == 1 && "SSH Call Home failed.");
+
+//   printf("Successfuly connected to RU with IP address %s\n", ru_ip_add);
+// }
+
 
 #ifdef V1
-  // needed for V1
+void recv_v1(ru_session_t * ru_session, struct nc_rpc *rpc, NC_MSG_TYPE msgtype, const uint64_t msgid, FILE *output, int timeout_s)
+{
   struct nc_reply *reply;
   struct nc_reply_data *data_rpl;
   struct nc_reply_error *error;
   char *str = NULL;
+  uint32_t ly_wd;
 
-recv_reply:
-  msgtype = nc_recv_reply(session, rpc, msgid, timeout_s * 1000,
+  LYD_FORMAT output_format = LYD_XML;
+
+  uint32_t output_flag = 0;    // other option is LYD_PRINT_SHRINK: Flag for output without indentation and formatting new lines.
+
+  while(1){
+    msgtype = nc_recv_reply(ru_session->session, rpc, msgid, timeout_s * 1000,
                             LYD_OPT_DESTRUCT | LYD_OPT_NOSIBLINGS, &reply);
-  if (msgtype == NC_MSG_ERROR) {
-    assert(false && "Failed to receive a reply.");
-    cmd_disconnect();
-  } else if (msgtype == NC_MSG_WOULDBLOCK) {
-    assert(false && "Timeout for receiving a reply expired.");
-  } else if (msgtype == NC_MSG_NOTIF) {
-    /* read again */
-    goto recv_reply;
-  } else if (msgtype == NC_MSG_REPLY_ERR_MSGID) {
-    /* unexpected message, try reading again to get the correct reply */
-    printf("Unexpected reply received - ignoring and waiting for the correct reply.\n");
-    nc_reply_free(reply);
-    goto recv_reply;
+    if (msgtype == NC_MSG_ERROR) {
+      assert(false && "Failed to receive a reply.");
+      cmd_disconnect(ru_session);
+    } else if (msgtype == NC_MSG_WOULDBLOCK) {
+      assert(false && "Timeout for receiving a reply expired.");
+    } else if (msgtype == NC_MSG_NOTIF) {
+      /* read again */
+      continue;
+    } else if (msgtype == NC_MSG_REPLY_ERR_MSGID) {
+      /* unexpected message, try reading again to get the correct reply */
+      printf("Unexpected reply received - ignoring and waiting for the correct reply.\n");
+      nc_reply_free(reply);
+      continue;
+    }
+    break;
   }
 
   switch (reply->type) {
@@ -285,26 +303,35 @@ recv_reply:
     default:
       assert(false && "Internal error.");
       nc_reply_free(reply);
-    }
-    nc_reply_free(reply);
-
+  }
+  nc_reply_free(reply);
+}
 #elif defined V2
-recv_reply:
-  msgtype = nc_recv_reply(session, rpc, msgid, timeout_s * 1000, &envp, &op);
-  if (msgtype == NC_MSG_ERROR) {
-    assert(false && "[MPLANE] Failed to receive a reply for RPC.\n");    // pass rpc->type
-    cmd_disconnect();
-  } else if (msgtype == NC_MSG_WOULDBLOCK) {
-    assert(false && "Timeout for receiving a reply for RPC expired.\n");      // pass rpc->type
-  } else if (msgtype == NC_MSG_NOTIF) {    // for SUBSCRIBE 
-    /* read again */
-    goto recv_reply;
-  } else if (msgtype == NC_MSG_REPLY_ERR_MSGID) {
-    /* unexpected message, try reading again to get the correct reply */
-    printf("[MPLANE] Unexpected reply received - ignoring and waiting for the correct reply.\n");
-    lyd_free_tree(envp);
-    lyd_free_tree(op);
-    goto recv_reply;
+void recv_v2(ru_session_t * ru_session, struct nc_rpc *rpc, NC_MSG_TYPE msgtype, const uint64_t msgid, FILE *output, int timeout_s)
+{
+  struct lyd_node *envp, *op, *err, *node, *info;
+  uint32_t ly_wd;
+  LYD_FORMAT output_format = LYD_XML;
+  uint32_t output_flag = 0;    // other option is LYD_PRINT_SHRINK: Flag for output without indentation and formatting new lines.
+
+  while(1){
+    msgtype = nc_recv_reply(ru_session->session, rpc, msgid, timeout_s * 1000, &envp, &op);
+    if (msgtype == NC_MSG_ERROR) {
+      assert(false && "[MPLANE] Failed to receive a reply for RPC.\n");    // pass rpc->type
+      cmd_disconnect(ru_session);
+    } else if (msgtype == NC_MSG_WOULDBLOCK) {
+      assert(false && "Timeout for receiving a reply for RPC expired.\n");      // pass rpc->type
+    } else if (msgtype == NC_MSG_NOTIF) {    // for SUBSCRIBE 
+      /* read again */
+      continue;
+    } else if (msgtype == NC_MSG_REPLY_ERR_MSGID) {
+      /* unexpected message, try reading again to get the correct reply */
+      printf("[MPLANE] Unexpected reply received - ignoring and waiting for the correct reply.\n");
+      lyd_free_tree(envp);
+      lyd_free_tree(op);
+      continue;
+    }
+    break;
   }
 
   /* get functionality */
@@ -370,7 +397,7 @@ recv_reply:
         info = lyd_child(err);
         while (!lyd_find_sibling_opaq_next(info, "error-info", &info)) {
           fprintf(output, "\tinfo:\n");
-          lyd_print_file(stdout, lyd_child(info), LYD_XML, LYD_PRINT_WITHSIBLINGS);
+          lyd_print_file(stdout, lyd_child(info), output_format, LYD_PRINT_WITHSIBLINGS);
 
           info = info->next;
         }
@@ -381,12 +408,34 @@ recv_reply:
 
     lyd_free_tree(envp);
     lyd_free_tree(op);
+}
+#else
+  assert(false && "Unknown M-plane version\n");
+#endif
+
+static void cli_send_recv(ru_session_t * ru_session, struct nc_rpc *rpc, FILE *output, NC_WD_MODE wd_mode, int timeout_s)
+{
+  uint64_t msgid;
+  NC_MSG_TYPE msgtype;
+  
+  msgtype = nc_send_rpc(ru_session->session, rpc, 1000, &msgid);
+  if (msgtype == NC_MSG_ERROR) {
+    assert(false && "[MPLANE] Failed to send the RPC.\n");   // pass rpc->type and use AssertFatal() in OAI
+    cmd_disconnect(ru_session); // should we pass session ID?
+  } else if (msgtype == NC_MSG_WOULDBLOCK) {
+    assert(false && "[MPLANE] Timeout for sending the RPC expired.\n");   // pass rpc->type
+  }
+
+#ifdef V1
+  recv_v1(ru_session, rpc, msgtype, msgid, output, timeout_s);
+#elif defined V2
+  recv_v2(ru_session, rpc, msgtype, msgid, output, timeout_s);
 #else
   assert(false && "Unknown M-plane version\n");
 #endif
 }
 
-static void cmd_commit(void)
+static void cmd_commit(ru_session_t *ru_session)
 {
   struct nc_rpc *rpc;
   int confirmed = 0, timeout = CLI_RPC_REPLY_TIMEOUT;
@@ -397,13 +446,13 @@ static void cmd_commit(void)
   rpc = nc_rpc_commit(confirmed, confirm_timeout, persist, persist_id, NC_PARAMTYPE_CONST);
   assert(rpc != NULL && "RPC creation failed.");
 
-  cli_send_recv(rpc, stdout, 0, timeout);
+  cli_send_recv(ru_session, rpc, stdout, 0, timeout);
   printf("RU config is successfully committed\n");
 
   nc_rpc_free(rpc);
 }
 
-static void cmd_validate(void)
+static void cmd_validate(ru_session_t *ru_session)
 {
   struct nc_rpc *rpc;
   int timeout = CLI_RPC_REPLY_TIMEOUT;
@@ -414,13 +463,13 @@ static void cmd_validate(void)
   rpc = nc_rpc_validate(source, src_start, NC_PARAMTYPE_CONST);
   assert(rpc != NULL && "RPC val creation failed.");
 
-  cli_send_recv(rpc, stdout, 0, timeout);
+  cli_send_recv(ru_session, rpc, stdout, 0, timeout);
   printf("RU config successfully validated. Ready for the changes to be commited\n");
 
   nc_rpc_free(rpc);
 }
 
-static void cmd_edit_config(void)
+static void cmd_edit_config(ru_session_t *ru_session)
 {
   int c, config_fd, ret = EXIT_FAILURE, content_param = 0, timeout = CLI_RPC_REPLY_TIMEOUT;
   struct stat config_stat;
@@ -457,14 +506,14 @@ static void cmd_edit_config(void)
   rpc = nc_rpc_edit(target, op, test, err, content, NC_PARAMTYPE_CONST);
   assert(rpc != NULL && "RPC creation failed.\n");
 
-  cli_send_recv(rpc, stdout, 0, timeout);
+  cli_send_recv(ru_session, rpc, stdout, 0, timeout);
   printf("Successfully edited RU config\n");
 
   nc_rpc_free(rpc);
   free(content);
 }
 
-static void cmd_get_delay_profile(void)
+static void cmd_get_delay_profile(ru_session_t *ru_session)
 {
   int timeout = CLI_RPC_REPLY_TIMEOUT;
   struct nc_rpc *rpc;
@@ -477,7 +526,7 @@ static void cmd_get_delay_profile(void)
   rpc = nc_rpc_get(filter, wd, param);
   assert(rpc != NULL && "RPC creation failed.\n");
 
-  cli_send_recv(rpc, output, wd, timeout);
+  cli_send_recv(ru_session, rpc, output, wd, timeout);
   printf("Successfully retreived RU delay profile\n");
 
   fclose(output);
@@ -486,6 +535,17 @@ static void cmd_get_delay_profile(void)
 
 int main(void)
 {
+  // to import list of IP addresses from gnb.conf and allocate the correct length
+  const size_t num_ru = 1;
+  ru_session_t *ru_session = calloc(num_ru, sizeof(ru_session_t));
+  assert(ru_session != NULL);
+
+  ru_session[0].session = NULL;
+  ru_session[0].ru_ip_add = "192.168.80.3";  // VVDN
+
+  // ru_session[1].session = NULL;
+  // ru_session[1].ru_ip_add = "192.168.80.4";  // Benetel 550
+
   nc_client_init();
 
   /* check if this is needed, probably yes;
@@ -497,15 +557,20 @@ int main(void)
 
 
   // logs for netconf2 and yang libraries
-  nc_set_print_clb(lnc2_print_clb); // TODO: use nc_set_print_clb_session() function!
-  ly_set_log_clb(ly_print_clb, 1);   // called in previous func?
+  // nc_set_print_clb(lnc2_print_clb); 
+  ly_set_log_clb(ly_print_clb, 1);
+  // NOTE: nc_set_print_clb_session() function introduced in v2
 
-  cmd_listen();
-  cmd_get_delay_profile();
-  cmd_edit_config();
-  cmd_validate();
-  cmd_commit();
-  cmd_disconnect();
+  for (size_t i = 0; i < num_ru; i++){
+    cmd_connect(&ru_session[i]);
+    // cmd_listen();
+    cmd_get_delay_profile(&ru_session[i]);
+    cmd_edit_config(&ru_session[i]);
+    cmd_validate(&ru_session[i]);
+    cmd_commit(&ru_session[i]);
+    cmd_disconnect(&ru_session[i]);
+  }
+
 
   nc_client_destroy();
 
