@@ -17,7 +17,14 @@ pkg_check_modules(libyang REQUIRED libyang)  # check if the version is v1 latest
 message(STATUS "${libyang_INCLUDE_DIRS}")
 message(STATUS "${libyang_LINK_LIBRARIES}")
 
-add_executable(my_client main.c)
+
+add_executable(my_client main.c
+                        init-mplane.c
+                        connect-mplane.c
+                        get-mplane.c
+                        config-mplane.c
+                        disconnect-mplane.c
+                        rpc-send-recv.c)
 
 target_include_directories(my_client PRIVATE ${libnetconf2_INCLUDE_DIRS})
 target_link_libraries(my_client PRIVATE ${libnetconf2_LINK_LIBRARIES})
