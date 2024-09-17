@@ -3,6 +3,6 @@
 
 #include "ru-session-api.h"
 
-void cmd_get_delay_profile(ru_session_t *ru_session);
+char *cmd_get(ru_session_t *ru_session);
 
 #endif /* GET_MPLANE_H */

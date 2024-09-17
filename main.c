@@ -3,6 +3,7 @@
 #include "get-mplane.h"
 #include "config-mplane.h"
 #include "disconnect-mplane.h"
+#include "xml/get-xml.h"
 
 #include <signal.h>
 #include <assert.h>
@@ -43,9 +44,13 @@ int main(int argc, char *argv[])
     num_ru = argc - 1;
   }
 
+  ru_config_t *ru_config = calloc(num_ru, sizeof(ru_config_t));
+  assert(ru_config != NULL);
+
   for (size_t i = 0; i < num_ru; i++) {
     (is_connect) ? cmd_connect(&ru_session[i]) : cmd_listen(&ru_session[i]);
-    cmd_get_delay_profile(&ru_session[i]);
+    const char *filename = cmd_get(&ru_session[i]);
+    ru_config[i].delay = get_ru_delay_profile(filename);
     cmd_edit_config(&ru_session[i]);
     cmd_validate(&ru_session[i]);
     cmd_commit(&ru_session[i]);
