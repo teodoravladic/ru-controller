@@ -1,0 +1,8 @@
+# IDE files
+.vscode
+.cproject
+.project
+.settings
+
+# build directory
+build/
