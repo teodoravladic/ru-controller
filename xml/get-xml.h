@@ -2,6 +2,7 @@
 #define GET_XML_H
 
 #include <stdio.h>
+#include <stdbool.h>
 
 typedef struct {
   int T2a_min_up;
@@ -29,5 +30,7 @@ typedef struct {
 } ru_config_t;
 
 delay_profile_t get_ru_delay_profile(const char *filename);
+
+bool get_ptp_sync_status(const char *filename);
 
 #endif /* GET_XML_H */

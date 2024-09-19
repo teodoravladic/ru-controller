@@ -25,6 +25,7 @@ add_executable(my_client main.c
                         init-mplane.c
                         connect-mplane.c
                         get-mplane.c
+                        subscribe-mplane.c
                         config-mplane.c
                         disconnect-mplane.c
                         rpc-send-recv.c
