@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include <libxml/parser.h>
 
@@ -83,4 +84,29 @@ delay_profile_t get_ru_delay_profile(const char *filename)
   log_ru_delay_profile(&delay);
 
   return delay;
+}
+
+static bool find_ptp_status(xmlNode *node)
+{
+  for (xmlNode *cur_node = node; cur_node; cur_node = cur_node->next) {
+    if (cur_node->type == XML_ELEMENT_NODE) {
+      if (strcmp((const char *)cur_node->name, "sync-state") == 0 && strcmp((char *)xmlNodeGetContent(cur_node), "LOCKED") == 0) {
+          printf("RU is already PTP synchronized\n");
+          return true;
+      }
+      if (find_ptp_status(cur_node->children)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool get_ptp_sync_status(const char *filename)
+{
+  // Initialize the xml file
+  xmlDoc *doc = xmlReadFile(filename, NULL, 0);
+  xmlNode *root_element = xmlDocGetRootElement(doc);
+
+  return find_ptp_status(root_element->children);
 }
