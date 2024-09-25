@@ -13,7 +13,7 @@ void cmd_edit_config(ru_session_t *ru_session)
 {
   int c, config_fd, ret = EXIT_FAILURE, content_param = 0, timeout = CLI_RPC_REPLY_TIMEOUT;
   struct stat config_stat;
-  char *content = NULL, *config_m = NULL, *cont_start;
+  char *config_m = NULL, *cont_start;
   NC_DATASTORE target = NC_DATASTORE_CANDIDATE;  // also, can be RUNNING, but by M-plane spec, we should modify CANDIDATE, then verify if it's ok and then COMMIT
   struct nc_rpc *rpc;
   NC_RPC_EDIT_DFLTOP op = NC_RPC_EDIT_DFLTOP_REPLACE;  // check which one is better: MERGE or REPLACE
@@ -22,26 +22,14 @@ void cmd_edit_config(ru_session_t *ru_session)
 
   /* open edit configuration data from the file */
   const char *input = "../working-100.xml";
-  config_fd = open(input, O_RDONLY);
-  assert(config_fd != -1 && "Unable to open the local datastore file.\n");    // pass input and strerror(errno));
-
-  /* map content of the file into the memory */
-  if (fstat(config_fd, &config_stat) != 0) {
-    assert(false && "fstat failed.");    // pass strerror(errno)
-    close(config_fd);
-  }
-  config_m = mmap(NULL, config_stat.st_size, PROT_READ, MAP_PRIVATE, config_fd, 0);
-  if (config_m == MAP_FAILED) {
-    assert(false && "mmap of the local datastore file failed.\n");    // pass strerror(errno)
-    close(config_fd);
-  }
-
-  /* make a copy of the content to allow closing the file */
-  content = strdup(config_m);
-
-  /* unmap local datastore file and close it */
-  munmap(config_m, config_stat.st_size);
-  close(config_fd);
+  FILE *f = fopen(input, "r");
+  fseek(f, 0, SEEK_END);
+  long len = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  char *content = calloc(len + 1, sizeof(char));
+  fread(content, 1, len, f);
+  content[len] = '\0';
+  fclose(f);
 
   rpc = nc_rpc_edit(target, op, test, err, content, NC_PARAMTYPE_CONST);
   assert(rpc != NULL && "RPC creation failed.\n");
