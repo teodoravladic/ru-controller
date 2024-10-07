@@ -72,12 +72,13 @@ static void find_ru_delay_profile(xmlNode *node, delay_profile_t *delay)
   }
 }
 
-delay_profile_t get_ru_delay_profile(const char *filename)
+delay_profile_t get_ru_delay_profile(const char *buffer)
 {
   delay_profile_t delay = {0};
 
   // Initialize the xml file
-  xmlDoc *doc = xmlReadFile(filename, NULL, 0);
+  size_t len = strlen(buffer) + 1;
+  xmlDoc *doc = xmlReadMemory(buffer, len, NULL, NULL, 0);
   xmlNode *root_element = xmlDocGetRootElement(doc);
 
   find_ru_delay_profile(root_element->children, &delay);
@@ -102,10 +103,11 @@ static bool find_ptp_status(xmlNode *node)
   return false;
 }
 
-bool get_ptp_sync_status(const char *filename)
+bool get_ptp_sync_status(const char *buffer)
 {
   // Initialize the xml file
-  xmlDoc *doc = xmlReadFile(filename, NULL, 0);
+  size_t len = strlen(buffer) + 1;
+  xmlDoc *doc = xmlReadMemory(buffer, len, NULL, NULL, 0);
   xmlNode *root_element = xmlDocGetRootElement(doc);
 
   return find_ptp_status(root_element->children);
