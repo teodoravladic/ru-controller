@@ -50,12 +50,14 @@ int main(int argc, char *argv[])
 
   for (size_t i = 0; i < num_ru; i++) {
     (is_connect) ? cmd_connect(&ru_session[i]) : cmd_listen(&ru_session[i]);
-    const char *filename = cmd_get(&ru_session[i]);
-    ru_config[i].delay = get_ru_delay_profile(filename);
-    bool synced = get_ptp_sync_status(filename);
+
+    char *operational_ds = cmd_get(&ru_session[i]);
+    ru_config[i].delay = get_ru_delay_profile(operational_ds);
+    bool synced = get_ptp_sync_status(operational_ds);
     if(synced == false){
       cmd_subscribe(&ru_session[i]);
     }
+
     cmd_edit_config(&ru_session[i]);
     cmd_validate(&ru_session[i]);
     cmd_commit(&ru_session[i]);

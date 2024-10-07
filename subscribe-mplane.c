@@ -76,7 +76,7 @@ void cmd_subscribe(ru_session_t *ru_session)
   assert(ret == 0 && "Failed to create notification thread.");
 #endif
 
-  rpc_send_recv(ru_session, rpc, output, wd, timeout);
+  rpc_send_recv(ru_session, rpc, wd, timeout);
   printf("Successfully subscribed to PTP sync status\n");
 
   while(!synced){

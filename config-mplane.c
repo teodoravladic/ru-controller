@@ -34,7 +34,7 @@ void cmd_edit_config(ru_session_t *ru_session)
   rpc = nc_rpc_edit(target, op, test, err, content, NC_PARAMTYPE_CONST);
   assert(rpc != NULL && "RPC creation failed.\n");
 
-  rpc_send_recv(ru_session, rpc, stdout, 0, timeout);
+  rpc_send_recv(ru_session, rpc, 0, timeout);
   printf("Successfully edited RU config\n");
 
   nc_rpc_free(rpc);
@@ -52,7 +52,7 @@ void cmd_validate(ru_session_t *ru_session)
   rpc = nc_rpc_validate(source, src_start, NC_PARAMTYPE_CONST);
   assert(rpc != NULL && "RPC val creation failed.");
 
-  rpc_send_recv(ru_session, rpc, stdout, 0, timeout);
+  rpc_send_recv(ru_session, rpc, 0, timeout);
   printf("RU config successfully validated. Ready for the changes to be commited\n");
 
   nc_rpc_free(rpc);
@@ -69,7 +69,7 @@ void cmd_commit(ru_session_t *ru_session)
   rpc = nc_rpc_commit(confirmed, confirm_timeout, persist, persist_id, NC_PARAMTYPE_CONST);
   assert(rpc != NULL && "RPC creation failed.");
 
-  rpc_send_recv(ru_session, rpc, stdout, 0, timeout);
+  rpc_send_recv(ru_session, rpc, 0, timeout);
   printf("RU config is successfully committed\n");
 
   nc_rpc_free(rpc);
