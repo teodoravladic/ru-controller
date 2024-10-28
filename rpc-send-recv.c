@@ -68,51 +68,40 @@ static char *recv_v1(ru_session_t * ru_session, struct nc_rpc *rpc, NC_MSG_TYPE 
     case NC_RPL_DATA:
       data_rpl = (struct nc_reply_data *)reply;
 
-      switch (nc_rpc_get_type(rpc)) {
-        case NC_RPC_GETCONFIG:
-          fprintf(stdout, "<config xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n");
-          break;
-        case NC_RPC_GET:
-          fprintf(stdout, "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n");
-          break;
-        default:
-          break;
-      }
+      if (nc_rpc_get_type(rpc) == NC_RPC_GETSCHEMA) {
+        assert((!data_rpl->data || (data_rpl->data->schema->nodetype != LYS_RPC) || (data_rpl->data->child == NULL)
+               || (data_rpl->data->child->schema->nodetype != LYS_ANYXML)) && "Cannot get schema");
 
-      ly_wd = 0;
-    //   switch (wd_mode) {
-    //     case NC_WD_ALL:
-    //       ly_wd = LYP_WD_ALL;
-    //       break;
-    //     case NC_WD_ALL_TAG:
-    //       ly_wd = LYP_WD_ALL_TAG;
-    //       break;
-    //     case NC_WD_TRIM:
-    //       ly_wd = LYP_WD_TRIM;
-    //       break;
-    //     case NC_WD_EXPLICIT:
-    //       ly_wd = LYP_WD_EXPLICIT;
-    //       break;
-    //     default:
-    //       ly_wd = 0;
-    //       break;
-    //     }
-
-      lyd_print_mem(&answer, data_rpl->data, output_format, LYP_WITHSIBLINGS | LYP_NETCONF | ly_wd | output_flag);
-      if (stdout == stdout) {
-        fprintf(stdout, "\n");
-      } else {
-        switch (nc_rpc_get_type(rpc)) {
-          case NC_RPC_GETCONFIG:
-            fprintf(stdout, "</config>\n");
+        struct lyd_node_anydata *any = (struct lyd_node_anydata *)data_rpl->data->child;
+        switch (any->value_type) {
+          case LYD_ANYDATA_CONSTSTRING:
+          case LYD_ANYDATA_STRING:
+             answer = strdup(any->value.str); 
             break;
-          case NC_RPC_GET:
-            fprintf(stdout, "</data>\n");
-            break;
+          case LYD_ANYDATA_DATATREE:
+              lyd_print_mem(&answer, any->value.tree, LYD_XML, LYP_FORMAT | LYP_WITHSIBLINGS);
+              break;
+          case LYD_ANYDATA_XML:
+              lyxml_print_mem(&answer, any->value.xml, LYXML_PRINT_SIBLINGS);
+              break;
           default:
-            break;
-        }
+              assert(false && "cannot happen");
+          }
+          break;
+      } else if (nc_rpc_get_type(rpc) == NC_RPC_GETCONFIG) {
+        char *buffer = NULL;
+        ly_wd = 0; // but try with EXPLICIT
+        lyd_print_mem(&buffer, data_rpl->data, output_format, LYP_WITHSIBLINGS | LYP_NETCONF | ly_wd | output_flag);
+        answer = calloc(strlen(buffer)+128, sizeof(char));
+        sprintf(answer, "%s%s%s", "<config xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n", buffer, "</config>");
+      } else if (nc_rpc_get_type(rpc) == NC_RPC_GET) {
+        char *buffer = NULL;
+        ly_wd = 0; // but try with EXPLICIT
+        lyd_print_mem(&buffer, data_rpl->data, output_format, LYP_WITHSIBLINGS | LYP_NETCONF | ly_wd | output_flag);
+        answer = calloc(strlen(buffer)+128, sizeof(char));
+        sprintf(answer, "%s%s%s", "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\">\n", buffer, "</data>");
       }
+      
       break;
     case NC_RPL_ERROR:
       fprintf(stdout, "ERROR\n");
@@ -198,29 +187,47 @@ static char *recv_v2(ru_session_t * ru_session, struct nc_rpc *rpc, NC_MSG_TYPE 
   /* get functionality */
   if (op) {
   /* data reply */
+    if (nc_rpc_get_type(rpc) == NC_RPC_GETSCHEMA) {
+      /* special case */
+      if (!lyd_child(op) || (lyd_child(op)->schema->nodetype != LYS_ANYXML)) {
+        assert(false && "Cannot happen");
+      }
+      struct lyd_node_any *any = (struct lyd_node_any *)lyd_child(op);
+      switch (any->value_type) {
+      case LYD_ANYDATA_STRING:
+      case LYD_ANYDATA_XML:
+          answer = strdup(any->value.str);
+          break;
+      case LYD_ANYDATA_DATATREE:
+          lyd_print_mem(&answer, any->value.tree, LYD_XML, LYD_PRINT_WITHSIBLINGS);
+          break;
+      default:
+        assert(false && "Cannot happen");
+      }
+    } else {
 
-  ly_wd = 0;  // but try with EXPLICIT
-  // switch (wd_mode) {
-  // case NC_WD_ALL:
-  //     ly_wd = LYD_PRINT_WD_ALL;
-  //     break;
-  // case NC_WD_ALL_TAG:
-  //     ly_wd = LYD_PRINT_WD_ALL_TAG;
-  //     break;
-  // case NC_WD_TRIM:
-  //     ly_wd = LYD_PRINT_WD_TRIM;
-  //     break;
-  // case NC_WD_EXPLICIT:
-  //     ly_wd = LYD_PRINT_WD_EXPLICIT;
-  //     break;
-  // default:
-  //     ly_wd = 0;
-  //     break;
-  // }
+      ly_wd = 0;  // but try with EXPLICIT
+      // switch (wd_mode) {
+      // case NC_WD_ALL:
+      //     ly_wd = LYD_PRINT_WD_ALL;
+      //     break;
+      // case NC_WD_ALL_TAG:
+      //     ly_wd = LYD_PRINT_WD_ALL_TAG;
+      //     break;
+      // case NC_WD_TRIM:
+      //     ly_wd = LYD_PRINT_WD_TRIM;
+      //     break;
+      // case NC_WD_EXPLICIT:
+      //     ly_wd = LYD_PRINT_WD_EXPLICIT;
+      //     break;
+      // default:
+      //     ly_wd = 0;
+      //     break;
+      // }
 
-  // lyd_print_file(output, lyd_child(op), output_format, LYD_PRINT_WITHSIBLINGS | ly_wd | output_flag);
-  lyd_print_mem(&answer, lyd_child(op), output_format, LYD_PRINT_WITHSIBLINGS | ly_wd | output_flag);
-
+      // lyd_print_file(output, lyd_child(op), output_format, LYD_PRINT_WITHSIBLINGS | ly_wd | output_flag);
+      lyd_print_mem(&answer, lyd_child(op), output_format, LYD_PRINT_WITHSIBLINGS | ly_wd | output_flag);
+    }
   /* edit/validate/commit functionalities */
   } else if (!strcmp(LYD_NAME(lyd_child(envp)), "ok")) {
     /* ok reply */

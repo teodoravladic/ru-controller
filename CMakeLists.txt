@@ -29,7 +29,8 @@ add_executable(my_client main.c
                         config-mplane.c
                         disconnect-mplane.c
                         rpc-send-recv.c
-                        xml/get-xml.c)
+                        xml/get-xml.c
+                        yang/get-yang-models.c)
 
 target_include_directories(my_client PRIVATE ${libnetconf2_INCLUDE_DIRS})
 target_link_libraries(my_client PRIVATE ${libnetconf2_LINK_LIBRARIES})

@@ -26,6 +26,7 @@
 #include "config-mplane.h"
 #include "disconnect-mplane.h"
 #include "xml/get-xml.h"
+#include "yang/get-yang-models.h"
 
 #include <signal.h>
 #include <assert.h>
@@ -73,6 +74,7 @@ int main(int argc, char *argv[])
     (is_connect) ? cmd_connect(&ru_session[i]) : cmd_listen(&ru_session[i]);
 
     char *operational_ds = cmd_get(&ru_session[i]);
+    get_yang_models(operational_ds, &ru_session[i]);
     ru_config[i].delay = get_ru_delay_profile(operational_ds);
     bool synced = get_ptp_sync_status(operational_ds);
     if(synced == false){
