@@ -21,7 +21,7 @@ void cmd_edit_config(ru_session_t *ru_session)
   NC_RPC_EDIT_ERROPT err = NC_RPC_EDIT_ERROPT_UNKNOWN;
 
   /* open edit configuration data from the file */
-  const char *input = "../working-100.xml";
+  const char *input = "<add-file-name>.xml";
   FILE *f = fopen(input, "r");
   fseek(f, 0, SEEK_END);
   long len = ftell(f);
