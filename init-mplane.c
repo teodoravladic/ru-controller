@@ -27,12 +27,12 @@
 
 static void lnc2_print_clb(NC_VERB_LEVEL level, const char *msg)
 {
-  printf("netconf2 verb level = %d\n", level);
+  //printf("netconf2 verb level = %d\n", level);
 
   switch (level) {
     case NC_VERB_ERROR:
       fprintf(stderr, "nc ERROR: %s\n", msg);
-      assert(false && "Cannot continue, netconf2 version does not match\n");
+      // assert(false && "Cannot continue, netconf2 version does not match\n");
       break;
     case NC_VERB_WARNING:
       fprintf(stderr, "nc WARNING: %s\n", msg);
@@ -49,7 +49,7 @@ static void lnc2_print_clb(NC_VERB_LEVEL level, const char *msg)
 
 static void ly_print_clb(LY_LOG_LEVEL level, const char *msg, const char *path)
 {
-  printf("yang verb level = %d\n", level);
+  //printf("yang verb level = %d\n", level);
   // printf("ru address = %s\n", ru_ip_add);
 
   switch (level) {
@@ -59,7 +59,7 @@ static void ly_print_clb(LY_LOG_LEVEL level, const char *msg, const char *path)
       } else {
           fprintf(stderr, "ly ERROR: %s\n", msg);
       }
-      assert(false && "Cannot continue, yang version does not match\n");
+      //assert(false && "Cannot continue, yang version does not match\n");
       break;
     case LY_LLWRN:
       if (path) {
@@ -100,7 +100,7 @@ ru_session_t * init_mplane(const int num_ru, char **ru_ip_add)
   }
 
   // logs for netconf2 and yang libraries
-  // nc_set_print_clb(lnc2_print_clb); 
+  nc_set_print_clb(lnc2_print_clb); 
   ly_set_log_clb(ly_print_clb, 1);
   // NOTE: nc_set_print_clb_session() function introduced in v2
 
