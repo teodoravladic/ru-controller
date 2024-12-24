@@ -37,7 +37,7 @@ void cmd_edit_config(ru_session_t *ru_session)
   char *config_m = NULL, *cont_start;
   NC_DATASTORE target = NC_DATASTORE_CANDIDATE;  // also, can be RUNNING, but by M-plane spec, we should modify CANDIDATE, then verify if it's ok and then COMMIT
   struct nc_rpc *rpc;
-  NC_RPC_EDIT_DFLTOP op = NC_RPC_EDIT_DFLTOP_REPLACE;  // check which one is better: MERGE or REPLACE
+  NC_RPC_EDIT_DFLTOP op = NC_RPC_EDIT_DFLTOP_MERGE;  // check which one is better: MERGE or REPLACE
   NC_RPC_EDIT_TESTOPT test = NC_RPC_EDIT_TESTOPT_UNKNOWN;
   NC_RPC_EDIT_ERROPT err = NC_RPC_EDIT_ERROPT_UNKNOWN;
 
